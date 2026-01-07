@@ -138,7 +138,7 @@ export async function runBotCycle(
             getCryptoPrices()
         ]);
 
-        const balanceCents = portfolio.balance;
+        let balanceCents = portfolio.balance;
         const btcRSI = crypto.btc_rsi || 50;
         const btcTrend = crypto.btc_trend || 'flat';
 
