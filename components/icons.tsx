@@ -1,0 +1,43 @@
+import {
+    LayoutDashboard,
+    LineChart,
+    Wallet,
+    Settings,
+    Bot,
+    List,
+    Menu,
+    X,
+    ChevronRight,
+    TrendingUp,
+    ArrowUp,
+    ArrowDown,
+    RefreshCw,
+    LogOut,
+    Moon,
+    Sun,
+    Loader2,
+    Check,
+    Ban
+} from "lucide-react"
+
+export const Icons = {
+    dashboard: LayoutDashboard,
+    markets: LineChart,
+    portfolio: Wallet,
+    settings: Settings,
+    bot: Bot,
+    orders: List,
+    menu: Menu,
+    close: X,
+    chevronRight: ChevronRight,
+    trendingUp: TrendingUp,
+    arrowUp: ArrowUp,
+    arrowDown: ArrowDown,
+    refresh: RefreshCw,
+    logout: LogOut,
+    moon: Moon,
+    sun: Sun,
+    spinner: Loader2,
+    check: Check,
+    cancel: Ban
+}

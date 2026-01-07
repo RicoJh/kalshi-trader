@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 2%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 2%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 180 100% 50%;
+    /* Electric Cyan */
+    --primary-foreground: 180 100% 10%;
+    --secondary: 0 100% 60%;
+    /* Neon Red */
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 100% 50%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 12%;
+    --input: 0 0% 10%;
+    --ring: 180 100% 50%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(0, 255, 255, 0.08), transparent 50%),
+      radial-gradient(circle at 100% 100%, rgba(255, 0, 0, 0.05), transparent 40%);
+    background-attachment: fixed;
+  }
+}
+
+.glass-card {
+  @apply bg-card/60 backdrop-blur-2xl border-white/5;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+}
+
+.terminal-glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.15);
+}
+
+.terminal-glow-red {
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.15);
+}
+
+.premium-gradient {
+  background: linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(255, 0, 0, 0.05) 100%);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-black;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-primary/20 rounded-full hover:bg-primary/40 transition-all;
+}
+
+@keyframes scan-line {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+.scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, rgba(0, 255, 255, 0.2), transparent);
+  animation: scan-line 4s linear infinite;
+  pointer-events: none;
+}
