@@ -101,7 +101,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2; // Synchronized throttle limit
 
     try {
-        logs.push(`Solus v5.7.4 Vigilant Online.`);
+        logs.push(`Solus v5.7.6 Vigilant Online.`);
 
         const [marketRes, snapshot] = await Promise.all([
             client.getBalance(),

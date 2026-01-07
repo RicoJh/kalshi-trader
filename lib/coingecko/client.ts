@@ -39,19 +39,32 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
     // 2. Momentum & Sentiment (RSI/Trend)
     try {
         const [btc5m, eth5m, btc1h, eth1h] = await Promise.all([
-            fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=25', { cache: 'no-store' }).then(r => r.json()),
-            fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=5m&limit=25', { cache: 'no-store' }).then(r => r.json()),
-            fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=10', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
-            fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1h&limit=10', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
+            fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=30', { cache: 'no-store' }).then(r => r.json()),
+            fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=5m&limit=30', { cache: 'no-store' }).then(r => r.json()),
+            fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=12', { cache: 'no-store' }).then(r => r.json()).catch(() => []),
+            fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1h&limit=12', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
         ]);
 
-        if (Array.isArray(btc5m) && btc5m.length >= 15) btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
-        if (Array.isArray(eth5m) && eth5m.length >= 15) ethRsi = calculateRSI(eth5m.map((k: any) => parseFloat(k[4])));
-        if (Array.isArray(btc1h) && btc1h.length >= 3) btcTrend = detectTrend(btc1h.map((k: any) => parseFloat(k[4])));
-        if (Array.isArray(eth1h) && eth1h.length >= 3) ethTrend = detectTrend(eth1h.map((k: any) => parseFloat(k[4])));
+        if (Array.isArray(btc5m) && btc5m.length >= 14) {
+            btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
+        } else {
+            btcRsi = 50.1; // Signal that the array was too short
+        }
+
+        if (Array.isArray(eth5m) && eth5m.length >= 14) {
+            ethRsi = calculateRSI(eth5m.map((k: any) => parseFloat(k[4])));
+        }
+
+        if (Array.isArray(btc1h) && btc1h.length >= 2) {
+            btcTrend = detectTrend(btc1h.map((k: any) => parseFloat(k[4])));
+        }
+
+        if (Array.isArray(eth1h) && eth1h.length >= 2) {
+            ethTrend = detectTrend(eth1h.map((k: any) => parseFloat(k[4])));
+        }
 
     } catch (e) {
-        btcRsi = 49; // Signal error state
+        btcRsi = 49.9; // Signal fetch error
     }
 
     return {
@@ -65,20 +78,21 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
 }
 
 function detectTrend(prices: number[]): 'up' | 'down' | 'flat' {
-    if (prices.length < 3) return 'flat';
+    if (prices.length < 2) return 'flat';
     const first = prices[0];
     const last = prices[prices.length - 1];
     const change = (last - first) / first;
 
-    if (change > 0.002) return 'up';   // +0.2% trend
-    if (change < -0.002) return 'down'; // -0.2% trend
+    // Use a more sensitive 0.1% threshold for short-term strikes
+    if (change > 0.001) return 'up';
+    if (change < -0.001) return 'down';
     return 'flat';
 }
 
 function calculateRSI(prices: number[]): number {
-    // We use the LAST 15 elements to ensure we get the most recent momentum
+    // Standard 14-period RSI
+    if (prices.length < 15) return 50;
     const recentPrices = prices.slice(-15);
-    if (recentPrices.length < 15) return 50;
 
     let gains = 0;
     let losses = 0;
