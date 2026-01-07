@@ -20,8 +20,6 @@ export function BotControls() {
             const res = await fetch('/api/bot/run', { method: 'POST' });
             const data = await res.json();
             if (data.logs) {
-                // Filter out too many "Initializing/Done" messages to reduce noise if no actions were taken
-                // Actually, keep them but make them very subtle.
                 const timeStr = new Date().toLocaleTimeString('en-US', {
                     hour12: false,
                     hour: '2-digit',
@@ -30,10 +28,13 @@ export function BotControls() {
                 });
 
                 const newLogs = data.logs.map((l: string) => `[${timeStr}] ${l}`);
-                setLogs(prev => [...newLogs, ...prev].slice(0, 200)); // Increased buffer to 200
+                setLogs(prev => [...newLogs, ...prev].slice(0, 200));
+            } else if (data.error) {
+                const timeStr = new Date().toLocaleTimeString();
+                setLogs(prev => [`[${timeStr}] ⚠️ VAULT LOCKED: ${data.error}. Re-save hardware settings.`, ...prev]);
             }
         } catch (e) {
-            setLogs(prev => [`[${new Date().toLocaleTimeString()}] ERROR: Transmission Interrupted.`, ...prev]);
+            setLogs(prev => [`[${new Date().toLocaleTimeString()}] ❌ ERROR: Peripheral sync failed.`, ...prev]);
         }
     }
 

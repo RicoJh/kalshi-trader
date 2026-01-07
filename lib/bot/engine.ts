@@ -166,31 +166,55 @@ export async function runBotCycle(
 
         // 3. Identification & Sizing
         const opportunities: any[] = [];
+        let filteredCount = { time: 0, spread: 0, logic: 0, size: 0 };
+
         for (const market of uniqueMarkets) {
             const closeTime = new Date(market.close_time).getTime();
-            if (closeTime > maxMs) continue;
+            if (closeTime > maxMs) {
+                filteredCount.time++;
+                continue;
+            }
 
             const isEth = market.ticker.includes('ETH');
+            const rsi = isEth ? (crypto.eth_rsi || 50) : (crypto.btc_rsi || 50);
+            const trend = isEth ? (crypto.eth_trend || 'flat') : (crypto.btc_trend || 'flat');
             const spot = isEth ? crypto.ethereum?.usd : crypto.bitcoin?.usd;
-            const rsi = isEth ? crypto.eth_rsi : crypto.btc_rsi;
-            const trend = isEth ? crypto.eth_trend : crypto.btc_trend;
 
             if (!spot) continue;
 
-            const side = getWinningSide(market, spot, rsi || 50, trend || 'flat');
-            if (!side) continue;
+            const side = getWinningSide(market, spot, rsi, trend);
+            if (!side) {
+                filteredCount.logic++;
+                continue;
+            }
 
             const ask = (side === 'yes' ? market.yes_ask : market.no_ask) || 99;
             const bid = (side === 'yes' ? market.yes_bid : market.no_bid) || 0;
             const entryPrice = Math.min(ask, bid + 1);
 
             const prob = 100 - config.minEdge;
-            if (entryPrice <= prob && entryPrice >= 10) {
-                const qty = calculateKellySize(balanceCents, entryPrice, config.minEdge, config.riskFactor || 0.2);
+            if (entryPrice <= prob && entryPrice >= 12) {
+                let qty = calculateKellySize(balanceCents, entryPrice, config.minEdge, config.riskFactor || 0.2);
+
+                // MICRO-ACCOUNT OVERRIDE: If balance is low, allow 1 share if we have edge and can afford it
+                if (qty === 0 && balanceCents >= entryPrice) {
+                    qty = 1;
+                }
+
                 if (qty > 0) {
                     opportunities.push({ market, side, cost: entryPrice, qty, expiry: closeTime });
+                } else {
+                    filteredCount.size++;
                 }
+            } else {
+                filteredCount.logic++;
             }
+        }
+
+        if (opportunities.length === 0 && uniqueMarkets.length > 0) {
+            logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.logic} Pattern | ${filteredCount.size} Size`);
+        } else {
+            logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
         }
 
         // 4. Execution (Sorted by Time-to-Profit)
@@ -200,7 +224,10 @@ export async function runBotCycle(
             if (actionsTaken >= MAX_ACTIONS) break;
 
             const success = await placeBotOrder(client, opp.market, opp.side, opp.qty, opp.cost, logs);
-            if (success) actionsTaken++;
+            if (success) {
+                actionsTaken++;
+                balanceCents -= (opp.cost * opp.qty);
+            }
             await new Promise(r => setTimeout(r, 800)); // Rate limit buffer
         }
 
