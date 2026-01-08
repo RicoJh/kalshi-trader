@@ -45,22 +45,27 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
             fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1h&limit=12', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
         ]);
 
-        if (Array.isArray(btc5m) && btc5m.length >= 7) {
-            btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
-        } else {
-            btcRsi = 50.1;
-        }
-
-        if (Array.isArray(eth5m) && eth5m.length >= 14) {
-            ethRsi = calculateRSI(eth5m.map((k: any) => parseFloat(k[4])));
-        }
-
         if (Array.isArray(btc1h) && btc1h.length >= 2) {
             btcTrend = detectTrend(btc1h.map((k: any) => parseFloat(k[4])));
         }
 
         if (Array.isArray(eth1h) && eth1h.length >= 2) {
             ethTrend = detectTrend(eth1h.map((k: any) => parseFloat(k[4])));
+        }
+
+        if (Array.isArray(btc5m) && btc5m.length >= 7) {
+            btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
+        } else if (Array.isArray(btc1h) && btc1h.length >= 2) {
+            // SYNTHETIC RSI: Fallback to 1H sentiment if 5M stream is sparse
+            btcRsi = btcTrend === 'up' ? 62 : (btcTrend === 'down' ? 38 : 50.2);
+        } else {
+            btcRsi = 50.3; // Signal: Extreme data starvation
+        }
+
+        if (Array.isArray(eth5m) && eth5m.length >= 7) {
+            ethRsi = calculateRSI(eth5m.map((k: any) => parseFloat(k[4])));
+        } else if (Array.isArray(eth1h) && eth1h.length >= 2) {
+            ethRsi = ethTrend === 'up' ? 62 : (ethTrend === 'down' ? 38 : 50.2);
         }
 
     } catch (e) {

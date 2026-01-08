@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.5 Synthetix Engaged.`);
+        logs.push(`Solus v6.7 Synthetix Engaged.`);
 
         const [portfolio, crypto, openOrdersRes] = await Promise.all([
             client.getBalance(),
@@ -139,7 +139,7 @@ export async function runBotCycle(
             client.getOrders({ status: 'open' })
         ]);
 
-        let balanceCents = portfolio.balance;
+        let balanceCents = portfolio.available_balance || portfolio.balance;
         const btcRSI = crypto.btc_rsi || 50;
         const btcTrend = crypto.btc_trend || 'flat';
         const openTickers = new Set((openOrdersRes.orders || []).map(o => o.ticker));
@@ -158,10 +158,17 @@ export async function runBotCycle(
             }
         } catch (e) { }
 
-        // 2. Parallel Market Discovery
+        // 2. Continuous Alpha Discovery
         let allMarkets: any[] = [];
+        let seriesHits: Record<string, number> = {};
+
         const scanPromises = TRADING_SERIES.map(s =>
-            client.getMarkets({ series_ticker: s, status: 'open', limit: 30 }).catch(() => ({ markets: [] }))
+            client.getMarkets({ series_ticker: s, status: 'open', limit: 30 })
+                .then(res => {
+                    seriesHits[s] = res.markets?.length || 0;
+                    return res;
+                })
+                .catch(() => ({ markets: [] }))
         );
         const results = await Promise.all(scanPromises);
         results.forEach(res => { if (res.markets) allMarkets.push(...res.markets); });
@@ -226,10 +233,11 @@ export async function runBotCycle(
         }
 
         if (opportunities.length === 0 && uniqueMarkets.length > 0) {
+            const hitsStr = Object.entries(seriesHits).filter(([_, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join('|');
             if (balanceCents < 15) {
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
             } else {
-                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic`);
+                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic | Found: ${hitsStr || 'None'}`);
             }
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
