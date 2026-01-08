@@ -131,29 +131,32 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.2 Synthetix Engaged.`);
+        logs.push(`Solus v6.3 Synthetix Engaged.`);
 
-        const [portfolio, crypto] = await Promise.all([
+        const [portfolio, crypto, openOrdersRes] = await Promise.all([
             client.getBalance(),
-            getCryptoPrices()
+            getCryptoPrices(),
+            client.getOrders({ status: 'open' })
         ]);
 
         let balanceCents = portfolio.balance;
         const btcRSI = crypto.btc_rsi || 50;
         const btcTrend = crypto.btc_trend || 'flat';
+        const openTickers = new Set((openOrdersRes.orders || []).map(o => o.ticker));
 
         logs.push(`Pulse: $${(balanceCents / 100).toFixed(2)} | RSI: ${btcRSI.toFixed(1)} | Trend: ${btcTrend.toUpperCase()}`);
 
-        // 1. Order Housekeeping (Optimized: Only cancel if you want to free up capital, but for now we leave them to fill)
-        /* 
+        // 1. Smart Housekeeping: Cancel orders that are no longer in our 'Optimized window'
         try {
-            const openOrders = await client.getOrders({ status: 'open' });
-            for (const order of (openOrders.orders || [])) {
-                // HFT Logic: Cancel orders that didn't fill in one cycle
-                await client.cancelOrder(order.order_id);
+            for (const order of (openOrdersRes.orders || [])) {
+                const orderTime = new Date(order.created_time || Date.now()).getTime();
+                // If an order has been sitting for more than 5 minutes without filling, recycle it
+                if (Date.now() - orderTime > 5 * 60 * 1000) {
+                    await client.cancelOrder(order.order_id);
+                    openTickers.delete(order.ticker);
+                }
             }
-        } catch (e) {} 
-        */
+        } catch (e) { }
 
         // 2. Parallel Market Discovery
         let allMarkets: any[] = [];
@@ -183,6 +186,9 @@ export async function runBotCycle(
             const spot = isEth ? crypto.ethereum?.usd : crypto.bitcoin?.usd;
 
             if (!spot) continue;
+
+            // DEDUPLICATION: Don't buy if we already have an open order for this ticker
+            if (openTickers.has(market.ticker)) continue;
 
             const side = getWinningSide(market, spot, rsi, trend);
             if (!side) {
