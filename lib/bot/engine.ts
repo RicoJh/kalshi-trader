@@ -187,8 +187,15 @@ export async function runBotCycle(
 
             if (!spot) continue;
 
-            // DEDUPLICATION: Don't buy if we already have an open order for this ticker
+            // DEDUPLICATION: Don't double-buy
             if (openTickers.has(market.ticker)) continue;
+
+            // Microstructure: Check Spread first
+            const spread = (market.yes_ask - market.yes_bid);
+            if (spread > 12) {
+                filteredCount.spread++;
+                continue;
+            }
 
             const side = getWinningSide(market, spot, rsi, trend);
             if (!side) {
@@ -204,7 +211,6 @@ export async function runBotCycle(
             if (entryPrice <= prob && entryPrice >= 12) {
                 let qty = calculateKellySize(balanceCents, entryPrice, config.minEdge, config.riskFactor || 0.2);
 
-                // MICRO-ACCOUNT OVERRIDE: If balance is low, allow 1 share if we have edge and can afford it
                 if (qty === 0 && balanceCents >= entryPrice) {
                     qty = 1;
                 }
@@ -220,7 +226,11 @@ export async function runBotCycle(
         }
 
         if (opportunities.length === 0 && uniqueMarkets.length > 0) {
-            logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.logic} Pattern | ${filteredCount.size} Size`);
+            if (balanceCents < 15) {
+                logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
+            } else {
+                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic`);
+            }
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
         }
