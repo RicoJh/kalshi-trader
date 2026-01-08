@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.3 Synthetix Engaged.`);
+        logs.push(`Solus v6.4 Synthetix Engaged.`);
 
         const [portfolio, crypto, openOrdersRes] = await Promise.all([
             client.getBalance(),
@@ -167,7 +167,7 @@ export async function runBotCycle(
         results.forEach(res => { if (res.markets) allMarkets.push(...res.markets); });
 
         const uniqueMarkets = Array.from(new Map(allMarkets.map(m => [m.ticker, m])).values());
-        const maxMs = Date.now() + 12 * 60 * 60 * 1000; // 12H Horizon Bridge
+        const maxMs = Date.now() + 24 * 60 * 60 * 1000; // 24H Horizon (Prep for morning strikes)
 
         // 3. Identification & Sizing
         const opportunities: any[] = [];
@@ -200,9 +200,13 @@ export async function runBotCycle(
             const bid = (side === 'yes' ? market.yes_bid : market.no_bid) || 0;
             const entryPrice = Math.min(ask, bid + 1);
 
-            const prob = 100 - config.minEdge;
+            // PRIORITY EDGE: Be more aggressive for immediate (12H) strikes
+            const timeToExpiryHrs = (closeTime - Date.now()) / (1000 * 60 * 60);
+            const dynamicMinEdge = timeToExpiryHrs < 12 ? config.minEdge : (config.minEdge + 3);
+
+            const prob = 100 - dynamicMinEdge;
             if (entryPrice <= prob && entryPrice >= 12) {
-                let qty = calculateKellySize(balanceCents, entryPrice, config.minEdge, config.riskFactor || 0.2);
+                let qty = calculateKellySize(balanceCents, entryPrice, dynamicMinEdge, config.riskFactor || 0.2);
 
                 // MICRO-ACCOUNT OVERRIDE: If balance is low, allow 1 share if we have edge and can afford it
                 if (qty === 0 && balanceCents >= entryPrice) {

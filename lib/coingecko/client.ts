@@ -45,10 +45,10 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
             fetch('https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1h&limit=12', { cache: 'no-store' }).then(r => r.json()).catch(() => [])
         ]);
 
-        if (Array.isArray(btc5m) && btc5m.length >= 14) {
+        if (Array.isArray(btc5m) && btc5m.length >= 7) {
             btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
         } else {
-            btcRsi = 50.1; // Signal that the array was too short
+            btcRsi = 50.1;
         }
 
         if (Array.isArray(eth5m) && eth5m.length >= 14) {
@@ -90,14 +90,17 @@ function detectTrend(prices: number[]): 'up' | 'down' | 'flat' {
 }
 
 function calculateRSI(prices: number[]): number {
-    // Standard 14-period RSI
-    if (prices.length < 15) return 50;
-    const recentPrices = prices.slice(-15);
+    // Variable-period RSI (Adapts from 7 to 14 periods based on available data)
+    const count = prices.length;
+    if (count < 8) return 50; // Still need a base minimum for sanity
+
+    const periods = Math.min(count - 1, 14);
+    const recentPrices = prices.slice(-(periods + 1));
 
     let gains = 0;
     let losses = 0;
 
-    for (let i = 1; i < 15; i++) {
+    for (let i = 1; i <= periods; i++) {
         const diff = recentPrices[i] - recentPrices[i - 1];
         if (diff >= 0) gains += diff;
         else losses -= diff;
@@ -105,6 +108,6 @@ function calculateRSI(prices: number[]): number {
 
     if (losses === 0) return 100;
 
-    const rs = (gains / 14) / (losses / 14);
+    const rs = (gains / periods) / (losses / periods);
     return 100 - (100 / (1 + rs));
 }
