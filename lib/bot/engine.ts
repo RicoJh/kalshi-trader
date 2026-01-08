@@ -100,7 +100,7 @@ async function placeBotOrder(client: KalshiClient, market: any, side: 'yes' | 'n
             side: side,
             count: count,
             [side === 'yes' ? 'yes_price' : 'no_price']: price,
-        });
+        }) as any;
 
         // Persistent Ledger Entry
         await logTrade({
@@ -111,7 +111,7 @@ async function placeBotOrder(client: KalshiClient, market: any, side: 'yes' | 'n
             status: 'open'
         }).catch(() => { }); // Don't block execution if DB fails
 
-        logs.push(`>>> CONFIRMED: Order ${result.order_id} filled/placed.`);
+        logs.push(`>>> CONFIRMED: Order ${result.order?.order_id || result.order_id} filled/placed.`);
         return true;
     } catch (e: any) {
         logs.push(`❌ REJECTED: ${e.message}`);
@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.0 Synthetix Engaged.`);
+        logs.push(`Solus v6.1 Synthetix Engaged.`);
 
         const [portfolio, crypto] = await Promise.all([
             client.getBalance(),
@@ -144,14 +144,16 @@ export async function runBotCycle(
 
         logs.push(`Pulse: $${(balanceCents / 100).toFixed(2)} | RSI: ${btcRSI.toFixed(1)} | Trend: ${btcTrend.toUpperCase()}`);
 
-        // 1. Order Housekeeping
+        // 1. Order Housekeeping (Optimized: Only cancel if you want to free up capital, but for now we leave them to fill)
+        /* 
         try {
             const openOrders = await client.getOrders({ status: 'open' });
             for (const order of (openOrders.orders || [])) {
                 // HFT Logic: Cancel orders that didn't fill in one cycle
                 await client.cancelOrder(order.order_id);
             }
-        } catch (e) { }
+        } catch (e) {} 
+        */
 
         // 2. Parallel Market Discovery
         let allMarkets: any[] = [];
