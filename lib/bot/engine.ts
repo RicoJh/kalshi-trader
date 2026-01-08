@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.1 Synthetix Engaged.`);
+        logs.push(`Solus v6.2 Synthetix Engaged.`);
 
         const [portfolio, crypto] = await Promise.all([
             client.getBalance(),
@@ -164,7 +164,7 @@ export async function runBotCycle(
         results.forEach(res => { if (res.markets) allMarkets.push(...res.markets); });
 
         const uniqueMarkets = Array.from(new Map(allMarkets.map(m => [m.ticker, m])).values());
-        const maxMs = Date.now() + 24 * 60 * 60 * 1000;
+        const maxMs = Date.now() + 12 * 60 * 60 * 1000; // 12H Horizon Bridge
 
         // 3. Identification & Sizing
         const opportunities: any[] = [];
