@@ -237,7 +237,7 @@ export async function runBotCycle(
             if (balanceCents < 15) {
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
             } else {
-                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic | Found: ${hitsStr || 'None'}`);
+                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic | ${filteredCount.size} Size | Found: ${hitsStr || 'None'}`);
             }
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);

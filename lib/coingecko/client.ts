@@ -69,7 +69,12 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
         }
 
     } catch (e) {
-        btcRsi = 49.9; // Signal fetch error
+        if (btcPrice > 0) {
+            btcRsi = 50.4; // Signal: Delta Fallback Active
+            btcTrend = 'flat';
+        } else {
+            btcRsi = 49.9;
+        }
     }
 
     return {
