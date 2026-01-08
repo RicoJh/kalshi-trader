@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.9 Synthetix Engaged.`);
+        logs.push(`Solus v7.0 Synthetix Engaged.`);
 
         const [portfolio, crypto, openOrdersRes] = await Promise.all([
             client.getBalance(),
@@ -234,10 +234,13 @@ export async function runBotCycle(
 
         if (opportunities.length === 0 && uniqueMarkets.length > 0) {
             const hitsStr = Object.entries(seriesHits).filter(([_, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join('|');
+            const target = uniqueMarkets.find(m => m.ticker.includes('15M'))?.ticker || uniqueMarkets[0]?.ticker;
+
             if (balanceCents < 15) {
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
             } else {
-                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size | Found: ${hitsStr || 'None'}`);
+                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size`);
+                logs.push(`Target: Found ${hitsStr || 'None'} | Trace: ${target}`);
             }
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
