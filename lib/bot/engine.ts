@@ -131,7 +131,7 @@ export async function runBotCycle(
     const MAX_ACTIONS = 2;
 
     try {
-        logs.push(`Solus v6.7 Synthetix Engaged.`);
+        logs.push(`Solus v6.9 Synthetix Engaged.`);
 
         const [portfolio, crypto, openOrdersRes] = await Promise.all([
             client.getBalance(),
@@ -178,7 +178,7 @@ export async function runBotCycle(
 
         // 3. Identification & Sizing
         const opportunities: any[] = [];
-        let filteredCount = { time: 0, spread: 0, logic: 0, size: 0 };
+        let filteredCount = { time: 0, spread: 0, logic: 0, edge: 0, size: 0 };
 
         for (const market of uniqueMarkets) {
             const closeTime = new Date(market.close_time).getTime();
@@ -212,7 +212,7 @@ export async function runBotCycle(
 
             const ask = (side === 'yes' ? market.yes_ask : market.no_ask) || 99;
             const bid = (side === 'yes' ? market.yes_bid : market.no_bid) || 0;
-            const entryPrice = Math.min(ask, bid + 1);
+            let entryPrice = Math.min(ask, bid + 1);
 
             const prob = 100 - config.minEdge;
             if (entryPrice <= prob && entryPrice >= 12) {
@@ -228,7 +228,7 @@ export async function runBotCycle(
                     filteredCount.size++;
                 }
             } else {
-                filteredCount.logic++;
+                filteredCount.edge++;
             }
         }
 
@@ -237,7 +237,7 @@ export async function runBotCycle(
             if (balanceCents < 15) {
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
             } else {
-                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Spread | ${filteredCount.logic} Logic | ${filteredCount.size} Size | Found: ${hitsStr || 'None'}`);
+                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size | Found: ${hitsStr || 'None'}`);
             }
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);

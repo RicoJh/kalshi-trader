@@ -56,10 +56,12 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
         if (Array.isArray(btc5m) && btc5m.length >= 7) {
             btcRsi = calculateRSI(btc5m.map((k: any) => parseFloat(k[4])));
         } else if (Array.isArray(btc1h) && btc1h.length >= 2) {
-            // SYNTHETIC RSI: Fallback to 1H sentiment if 5M stream is sparse
             btcRsi = btcTrend === 'up' ? 62 : (btcTrend === 'down' ? 38 : 50.2);
+        } else if (btcPrice > 0) {
+            // HEARTBEAT FALLBACK: Use spot price pulse if all candle streams are dead
+            btcRsi = 50.4;
         } else {
-            btcRsi = 50.3; // Signal: Extreme data starvation
+            btcRsi = 50.3;
         }
 
         if (Array.isArray(eth5m) && eth5m.length >= 7) {
