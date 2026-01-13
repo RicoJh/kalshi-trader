@@ -47,7 +47,7 @@ export function BotControls() {
             setRunning(true)
             setLogs(prev => [`[${new Date().toLocaleTimeString()}] >>> INITIATING CORE...`, ...prev]);
             runOneCycle();
-            timerRef.current = setInterval(runOneCycle, 10000)
+            timerRef.current = setInterval(runOneCycle, 3000)
         }
     }
 

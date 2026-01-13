@@ -8,7 +8,7 @@ import { logTrade } from "@/lib/db/trades";
  * Features: Fractional Kelly (0.2x), Volatility-Adjusted RSI, Microstructure Guards.
  */
 
-const TRADING_SERIES = ['KXBTC', 'KXETH', 'KXBTC15M', 'KXETH15M', 'KXBTCD', 'KXETHD'];
+const TRADING_SERIES = ['KXBTC15M'];
 
 interface EngineConfig {
     minEdge: number;
@@ -197,30 +197,66 @@ export async function runBotCycle(
             // DEDUPLICATION: Don't double-buy
             if (openTickers.has(market.ticker)) continue;
 
-            // Microstructure: Check Spread first
-            const spread = (market.yes_ask - market.yes_bid);
-            if (spread > 12) {
+            // Microstructure: Reciprocal Pricing Validation
+            // Kalshi orderbooks reciprocal: Yes Ask = 100 - No Bid
+            const yesBid = market.yes_bid;
+            const noBid = market.no_bid;
+            const yesAsk = market.yes_ask || (noBid > 0 ? 100 - noBid : 99);
+            const noAsk = market.no_ask || (yesBid > 0 ? 100 - yesBid : 99);
+
+            const spread = (yesAsk - yesBid);
+            if (spread > 15) { // Relaxed to 15c
                 filteredCount.spread++;
                 continue;
             }
 
             const side = getWinningSide(market, spot, rsi, trend);
             if (!side) {
+                // Debug logging for logic rejection
+                if (filteredCount.logic < 3) {
+                    logs.push(`LogicRej: ${market.ticker} | T:${market.title} | Spot:${spot} | RSI:${rsi.toFixed(1)}`);
+                }
                 filteredCount.logic++;
                 continue;
             }
 
-            const ask = (side === 'yes' ? market.yes_ask : market.no_ask) || 99;
-            const bid = (side === 'yes' ? market.yes_bid : market.no_bid) || 0;
+            const ask = (side === 'yes' ? yesAsk : noAsk);
+            const bid = (side === 'yes' ? yesBid : noBid);
             let entryPrice = Math.min(ask, bid + 1);
 
-            const prob = 100 - config.minEdge;
-            if (entryPrice <= prob && entryPrice >= 12) {
-                let qty = calculateKellySize(balanceCents, entryPrice, config.minEdge, config.riskFactor || 0.2);
+            // STRATEGY UPGRADE: "The Polymarket Bot" Logic (Latency Arb)
+            // If Spot is DEEP ITM (>0.5% away from strike), we treat it as a "Sure Thing".
+            // We allow buying up to 98c for these high-certainty trades to scalp the last pennies.
+            let isSureThing = false;
+
+            // Extract strike from title for gap calculation
+            const aboveMatch = market.title.match(/(?:above|higher|at or above)\s*\$([0-9,.]+)/i);
+            if (aboveMatch) {
+                const strike = parseFloat(aboveMatch[1].replace(/,/g, ''));
+                const gap = (spot - strike) / strike;
+
+                // If we are 'Yes' and spot is >0.2% above strike, it's very safe
+                if (side === 'yes' && gap > 0.002) isSureThing = true;
+                // If we are 'No' and spot is <0.2% below strike (for a "Below" market?), wait.
+                // Actually 'Above' market, 'No' means Spot < Strike. 
+                if (side === 'no' && gap < -0.002) isSureThing = true;
+            }
+
+            // Standard Edge (e.g. buy < 90c)
+            const standardProb = 100 - config.minEdge;
+            // Sure Thing Edge (buy < 98c)
+            const sureThingLimit = 98;
+
+            const priceLimit = isSureThing ? sureThingLimit : standardProb;
+
+            if (entryPrice <= priceLimit && entryPrice >= 12) {
+                let qty = calculateKellySize(balanceCents, entryPrice, isSureThing ? 2 : config.minEdge, config.riskFactor || 0.2);
 
                 if (qty === 0 && balanceCents >= entryPrice) {
-                    qty = 1;
+                    qty = 1; // Always take at least 1 if we can afford it
                 }
+
+                if (isSureThing && qty > 0) logs.push(`💎 ARB SIGHTED: ${market.ticker} is Deep ITM. Paying up to ${priceLimit}¢.`);
 
                 if (qty > 0) {
                     opportunities.push({ market, side, cost: entryPrice, qty, expiry: closeTime });
@@ -238,10 +274,10 @@ export async function runBotCycle(
 
             if (balanceCents < 15) {
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
-            } else {
-                logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size`);
-                logs.push(`Target: Found ${hitsStr || 'None'} | Trace: ${target}`);
             }
+
+            logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size`);
+            logs.push(`Target: Found ${hitsStr || 'None'} | Trace: ${target}`);
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
         }
