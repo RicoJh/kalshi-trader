@@ -20,7 +20,8 @@ export function SettingsForm() {
         pollInterval: botConfig.pollInterval,
         minEdge: botConfig.minEdge,
         maxShares: botConfig.maxShares,
-        maxDailyLoss: botConfig.maxDailyLoss
+        maxDailyLoss: botConfig.maxDailyLoss,
+        maxBudget: botConfig.maxBudget
     })
 
     // Sync local state when context loads (if needed, but usually context is fast enough or empty initially)
@@ -48,7 +49,8 @@ export function SettingsForm() {
                     pollInterval: formData.pollInterval,
                     minEdge: formData.minEdge,
                     maxShares: formData.maxShares,
-                    maxDailyLoss: formData.maxDailyLoss
+                    maxDailyLoss: formData.maxDailyLoss,
+                    maxBudget: formData.maxBudget
                 }
             })
             toast.success("Settings saved successfully")
@@ -153,6 +155,20 @@ export function SettingsForm() {
                                 value={formData.maxDailyLoss}
                                 onChange={handleChange}
                             />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="maxBudget">Max Budget ($)</Label>
+                            <Input
+                                type="number"
+                                id="maxBudget"
+                                name="maxBudget"
+                                value={formData.maxBudget}
+                                onChange={handleChange}
+                                placeholder="10"
+                            />
+                            <p className="text-[0.8rem] text-muted-foreground">
+                                Maximum dollar amount to be actively invested across all trades.
+                            </p>
                         </div>
                     </div>
                 </CardContent>

@@ -8,6 +8,7 @@ interface BotConfig {
     minEdge: number;
     maxShares: number;
     maxDailyLoss: number;
+    maxBudget?: number;
 }
 
 interface SettingsState {
@@ -28,6 +29,7 @@ const defaultBotConfig: BotConfig = {
     minEdge: 10,
     maxShares: 10,
     maxDailyLoss: 10,
+    maxBudget: 0,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

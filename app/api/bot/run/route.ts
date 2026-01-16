@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
         minEdge: 10,
         maxShares: 10,
         maxDailyLoss: 10,
+        maxBudget: 0, // 0 = unlimited, otherwise dollars
     };
 
     const result = await runBotCycle(

@@ -3,9 +3,13 @@ import { getCryptoPrices } from "@/lib/coingecko/client";
 import { logTrade } from "@/lib/db/trades";
 
 /**
- * SOLUS ENGINE V6.0 - "SYNTHETIX"
- * High-Frequency Scalping Protocol for Kalshi V2.
- * Features: Fractional Kelly (0.2x), Volatility-Adjusted RSI, Microstructure Guards.
+ * SOLUS ENGINE V7.0 - "SYNTHETIX"
+ * STRATEGY: INDEPENDENT LATENCY ARBITRAGE (Polymarket-Style)
+ * ------------------------------------------------------------------
+ * NOTE: This bot does NOT copy-trade specific wallets (like 0x8dxd).
+ * Instead, it replicates their *strategy*: high-frequency "Sure Thing" 
+ * execution based on live spot price data vs. lagging orderbooks.
+ * ------------------------------------------------------------------
  */
 
 const TRADING_SERIES = ['KXBTC15M'];
@@ -14,6 +18,7 @@ interface EngineConfig {
     minEdge: number;
     maxShares: number;
     riskFactor?: number; // 0.1 to 1.0 (default 0.2)
+    maxBudget?: number;
 }
 
 /**
@@ -24,22 +29,46 @@ function getWinningSide(market: any, spotPrice: number, rsi: number, trend: 'up'
     const combined = (market.title + ' ' + (market.subtitle || '')).toLowerCase();
     let side: 'yes' | 'no' | null = null;
 
-    // 1. Core Pattern Matching
-    const rangeMatch = combined.match(/\$([0-9,.]+)\s*to\s*\$?([0-9,.]+)/) || combined.match(/between\s*\$([0-9,.]+)\s*and\s*\$?([0-9,.]+)/);
-    if (rangeMatch) {
-        const low = parseFloat(rangeMatch[1].replace(/,/g, ''));
-        const high = parseFloat(rangeMatch[2].replace(/,/g, ''));
-        side = (spotPrice >= low && spotPrice <= high) ? 'yes' : 'no';
-    } else {
-        const aboveMatch = combined.match(/\$([0-9,.]+)\s*(?:above|higher|or more|at or above)/) || combined.match(/(?:above|higher|at or above)\s*\$([0-9,.]+)/);
-        if (aboveMatch) {
-            const thresh = parseFloat(aboveMatch[1].replace(/,/g, ''));
-            side = spotPrice >= thresh ? 'yes' : 'no';
+    // 1. Core Pattern Matching & Structured Data
+
+    // A. Structured Data (Preferred for API v2)
+    // Kalshi markets often expose floor_strike/cap_strike which are more reliable than title parsing
+    if (market.floor_strike !== undefined || market.cap_strike !== undefined) {
+        const floor = market.floor_strike;
+        const cap = market.cap_strike;
+
+        // Range (e.g. Between X and Y)
+        if (floor !== undefined && cap !== undefined) {
+            side = (spotPrice >= floor && spotPrice <= cap) ? 'yes' : 'no';
+        }
+        // Above X
+        else if (floor !== undefined) {
+            side = spotPrice >= floor ? 'yes' : 'no';
+        }
+        // Below X
+        else if (cap !== undefined) {
+            side = spotPrice <= cap ? 'yes' : 'no';
+        }
+    }
+
+    // B. Text Regex Fallback (Legacy Support)
+    if (!side) {
+        const rangeMatch = combined.match(/\$([0-9,.]+)\s*to\s*\$?([0-9,.]+)/) || combined.match(/between\s*\$([0-9,.]+)\s*and\s*\$?([0-9,.]+)/);
+        if (rangeMatch) {
+            const low = parseFloat(rangeMatch[1].replace(/,/g, ''));
+            const high = parseFloat(rangeMatch[2].replace(/,/g, ''));
+            side = (spotPrice >= low && spotPrice <= high) ? 'yes' : 'no';
         } else {
-            const belowMatch = combined.match(/\$([0-9,.]+)\s*(?:below|lower|or less|at or below)/) || combined.match(/(?:below|lower|at or below)\s*\$([0-9,.]+)/);
-            if (belowMatch) {
-                const thresh = parseFloat(belowMatch[1].replace(/,/g, ''));
-                side = spotPrice <= thresh ? 'yes' : 'no';
+            const aboveMatch = combined.match(/\$([0-9,.]+)\s*(?:above|higher|or more|at or above)/) || combined.match(/(?:above|higher|at or above)\s*\$([0-9,.]+)/);
+            if (aboveMatch) {
+                const thresh = parseFloat(aboveMatch[1].replace(/,/g, ''));
+                side = spotPrice >= thresh ? 'yes' : 'no';
+            } else {
+                const belowMatch = combined.match(/\$([0-9,.]+)\s*(?:below|lower|or less|at or below)/) || combined.match(/(?:below|lower|at or below)\s*\$([0-9,.]+)/);
+                if (belowMatch) {
+                    const thresh = parseFloat(belowMatch[1].replace(/,/g, ''));
+                    side = spotPrice <= thresh ? 'yes' : 'no';
+                }
             }
         }
     }
@@ -55,15 +84,17 @@ function getWinningSide(market: any, spotPrice: number, rsi: number, trend: 'up'
     // RSI Momentum Discipline (Optimized for 15M / 1H)
     // If we want YES, we wait for a dip (RSI < 45) during UP trend or 
     // extreme oversold (RSI < 30) during FLAT trend.
-    if (side === 'yes') {
-        if (trend === 'down') return null;
-        if (trend === 'up' && rsi > 65) return null; // Don't chase the peak
-        if (trend === 'flat' && rsi > 55) return null;
-    } else {
-        if (trend === 'up') return null;
-        if (trend === 'down' && rsi < 35) return null; // Don't chase the dump
-        if (trend === 'flat' && rsi < 45) return null;
-    }
+    // RSI Momentum Discipline (Relaxed for Crypto Volatility)
+    // Don't buy YES if we are already insanely overbought (RSI > 85)
+    if (side === 'yes' && rsi > 85) return null;
+    // Don't buy NO if we are already insanely oversold (RSI < 15)
+    if (side === 'no' && rsi < 15) return null;
+
+    // Trend Alignment (Optional but helpful)
+    // If trend is UP, avoid NO unless RSI is screaming (>80)
+    if (trend === 'up' && side === 'no' && rsi < 75) return null;
+    // If trend is DOWN, avoid YES unless RSI is screaming (<20)
+    if (trend === 'down' && side === 'yes' && rsi > 25) return null;
 
     return side;
 }
@@ -88,9 +119,9 @@ function calculateKellySize(balanceCents: number, priceCents: number, edge: numb
     return Math.max(0, shares);
 }
 
-async function placeBotOrder(client: KalshiClient, market: any, side: 'yes' | 'no', count: number, price: number, logs: string[]) {
+async function placeBotOrder(client: KalshiClient, market: any, side: 'yes' | 'no', count: number, price: number, logs: string[], currentPos: number, maxPos: number) {
     // Micro-latency logging
-    logs.push(`⚡ EXECUTING: ${market.ticker} [${side.toUpperCase()}] @ ${price}¢ x${count}`);
+    logs.push(`⚡ EXECUTING: ${market.ticker} [${side.toUpperCase()}] @ ${price}¢ x${count} (Pos: ${currentPos}/${maxPos})`);
 
     try {
         const result = await client.placeOrder({
@@ -133,10 +164,11 @@ export async function runBotCycle(
     try {
         logs.push(`Solus v7.0 Synthetix Engaged.`);
 
-        const [portfolio, crypto, openOrdersRes] = await Promise.all([
+        const [portfolio, crypto, openOrdersRes, positionsRes] = await Promise.all([
             client.getBalance(),
             getCryptoPrices(),
-            client.getOrders({ status: 'open' })
+            client.getOrders({ status: 'open' }),
+            client.getPositions()
         ]);
 
         let balanceCents = portfolio.available_balance || portfolio.balance;
@@ -144,7 +176,30 @@ export async function runBotCycle(
         const btcTrend = crypto.btc_trend || 'flat';
         const openTickers = new Set((openOrdersRes.orders || []).map(o => o.ticker));
 
-        logs.push(`Pulse: $${(balanceCents / 100).toFixed(2)} | RSI: ${btcRSI.toFixed(1)} | Trend: ${btcTrend.toUpperCase()}`);
+        let totalInvestedCents = 0;
+        const positions = new Map();
+
+        // 1. Count filled positions
+        (positionsRes.positions || []).forEach(p => {
+            positions.set(p.market_ticker, p.count);
+            // Use avg_price_cnt if available (it's in types.ts), otherwise estimate
+            const price = p.avg_price_cnt || p.current_price || 50;
+            totalInvestedCents += (p.count * price);
+        });
+
+        // 2. Also count PENDING open orders (not yet filled)
+        // This prevents over-trading while limit orders sit in the book
+        (openOrdersRes.orders || []).forEach(o => {
+            const existingCount = positions.get(o.ticker) || 0;
+            const orderQty = o.remaining_count || o.count || 0;
+            positions.set(o.ticker, existingCount + orderQty);
+
+            // Add to invested total (use order price)
+            const orderPrice = o.yes_price || o.no_price || 50;
+            totalInvestedCents += (orderQty * orderPrice);
+        });
+
+        logs.push(`Pulse: $${(balanceCents / 100).toFixed(2)} | Inv: $${(totalInvestedCents / 100).toFixed(2)} | RSI: ${btcRSI.toFixed(1)} | Trend: ${btcTrend.toUpperCase()}`);
 
         // 1. Smart Housekeeping: Cancel orders that are no longer in our 'Optimized window'
         try {
@@ -178,7 +233,7 @@ export async function runBotCycle(
 
         // 3. Identification & Sizing
         const opportunities: any[] = [];
-        let filteredCount = { time: 0, spread: 0, logic: 0, edge: 0, size: 0 };
+        let filteredCount = { time: 0, spread: 0, logic: 0, edge: 0, size: 0, max_exposure: 0, budget: 0 };
 
         for (const market of uniqueMarkets) {
             const closeTime = new Date(market.close_time).getTime();
@@ -192,10 +247,31 @@ export async function runBotCycle(
             const trend = isEth ? (crypto.eth_trend || 'flat') : (crypto.btc_trend || 'flat');
             const spot = isEth ? crypto.ethereum?.usd : crypto.bitcoin?.usd;
 
-            if (!spot) continue;
+            // Critical Guard: Must have live price.
+            if (!spot || spot === 0) {
+                if (filteredCount.logic === 0) logs.push(`⚠️ WARNING: Live ${isEth ? 'ETH' : 'BTC'} price unavailable. Check internet/API.`);
+                continue;
+            }
 
-            // DEDUPLICATION: Don't double-buy
+            // DEDUPLICATION: Don't double-buy if we have an open order
             if (openTickers.has(market.ticker)) continue;
+
+            const currentPos = positions.get(market.ticker) || 0;
+
+            // BUDGET CHECK: Cap total active exposure
+            if (config.maxBudget && config.maxBudget > 0) {
+                const maxBudgetCents = config.maxBudget * 100;
+                if (totalInvestedCents >= maxBudgetCents) {
+                    filteredCount.budget++;
+                    continue;
+                }
+            }
+
+            // POSITION LIMIT CHECK: Don't buy if we already have max exposure
+            if (currentPos >= config.maxShares) {
+                filteredCount.max_exposure++;
+                continue;
+            }
 
             // Microstructure: Reciprocal Pricing Validation
             // Kalshi orderbooks reciprocal: Yes Ask = 100 - No Bid
@@ -205,7 +281,7 @@ export async function runBotCycle(
             const noAsk = market.no_ask || (yesBid > 0 ? 100 - yesBid : 99);
 
             const spread = (yesAsk - yesBid);
-            if (spread > 15) { // Relaxed to 15c
+            if (spread > 25) { // Relaxed to 25c (Very Aggressive)
                 filteredCount.spread++;
                 continue;
             }
@@ -214,7 +290,7 @@ export async function runBotCycle(
             if (!side) {
                 // Debug logging for logic rejection
                 if (filteredCount.logic < 3) {
-                    logs.push(`LogicRej: ${market.ticker} | T:${market.title} | Spot:${spot} | RSI:${rsi.toFixed(1)}`);
+                    logs.push(`LogicRej: ${market.ticker} | T:${market.title} | Spot:${spot} | F:${market.floor_strike} C:${market.cap_strike}`);
                 }
                 filteredCount.logic++;
                 continue;
@@ -225,35 +301,72 @@ export async function runBotCycle(
             let entryPrice = Math.min(ask, bid + 1);
 
             // STRATEGY UPGRADE: "The Polymarket Bot" Logic (Latency Arb)
-            // If Spot is DEEP ITM (>0.5% away from strike), we treat it as a "Sure Thing".
-            // We allow buying up to 98c for these high-certainty trades to scalp the last pennies.
+            // If Spot is DEEP ITM (>0.1% away from strike), we treat it as a "Sure Thing".
+            // We allow buying up to 99c for these high-certainty trades to scalp the last pennies.
             let isSureThing = false;
 
-            // Extract strike from title for gap calculation
-            const aboveMatch = market.title.match(/(?:above|higher|at or above)\s*\$([0-9,.]+)/i);
-            if (aboveMatch) {
-                const strike = parseFloat(aboveMatch[1].replace(/,/g, ''));
-                const gap = (spot - strike) / strike;
+            // Extract strike for gap calculation (Sure Thing Logic)
+            let strike: number | null = null;
 
-                // If we are 'Yes' and spot is >0.2% above strike, it's very safe
-                if (side === 'yes' && gap > 0.002) isSureThing = true;
-                // If we are 'No' and spot is <0.2% below strike (for a "Below" market?), wait.
-                // Actually 'Above' market, 'No' means Spot < Strike. 
-                if (side === 'no' && gap < -0.002) isSureThing = true;
+            // For "above X" markets, floor_strike is the key
+            if (side === 'yes' && market.floor_strike !== undefined) {
+                strike = market.floor_strike;
+            }
+            // For "below X" markets, cap_strike is the key
+            else if (side === 'no' && market.cap_strike !== undefined) {
+                strike = market.cap_strike;
+            }
+            // Fallback to text parsing
+            else {
+                const aboveMatch = market.title.match(/(?:above|higher|at or above)\s*\$([0-9,.]+)/i);
+                const belowMatch = market.title.match(/(?:below|lower|at or below)\s*\$([0-9,.]+)/i);
+                if (aboveMatch) strike = parseFloat(aboveMatch[1].replace(/,/g, ''));
+                else if (belowMatch) strike = parseFloat(belowMatch[1].replace(/,/g, ''));
             }
 
-            // Standard Edge (e.g. buy < 90c)
+            if (strike !== null) {
+                const gap = (spot - strike) / strike;
+
+                // If we are 'Yes' and spot is >0.1% above strike, it's very safe
+                // Lowered from 0.2% to 0.1% to catch more trades
+                if (side === 'yes' && gap > 0.001) isSureThing = true;
+                // If we are 'No' and spot is <0.1% below strike
+                if (side === 'no' && gap < -0.001) isSureThing = true;
+            }
+
+            // Standard Edge (e.g. buy < 96c)
             const standardProb = 100 - config.minEdge;
-            // Sure Thing Edge (buy < 98c)
-            const sureThingLimit = 98;
+            // Sure Thing Edge (buy < 99c)
+            const sureThingLimit = 99;
 
             const priceLimit = isSureThing ? sureThingLimit : standardProb;
 
             if (entryPrice <= priceLimit && entryPrice >= 12) {
                 let qty = calculateKellySize(balanceCents, entryPrice, isSureThing ? 2 : config.minEdge, config.riskFactor || 0.2);
 
-                if (qty === 0 && balanceCents >= entryPrice) {
-                    qty = 1; // Always take at least 1 if we can afford it
+                // DYNAMIC SIZING: Adjust for existing exposure
+                // If we already own 5 and Kelly says 8, we only buy 3 more.
+                const currentExposure = positions.get(market.ticker) || 0;
+                qty = Math.max(0, qty - currentExposure);
+
+                // DYNAMIC SIZING: Adjust for Max Budget
+                if (config.maxBudget && config.maxBudget > 0) {
+                    const maxBudgetCents = config.maxBudget * 100;
+                    const remainingBudget = maxBudgetCents - totalInvestedCents;
+                    const affordability = Math.floor(remainingBudget / entryPrice);
+                    qty = Math.min(qty, affordability);
+                }
+
+                // Check against hard absolute limit
+                const remainingHeadroom = config.maxShares - currentExposure;
+                qty = Math.min(qty, remainingHeadroom);
+
+                if (qty === 0 && currentExposure < config.maxShares) {
+                    // MINIMUM VIABLE BET: If Kelly says 0 but we can afford 1, take the trade.
+                    // This ensures we don't sit idle with small balances.
+                    if (balanceCents >= entryPrice) {
+                        qty = 1;
+                    }
                 }
 
                 if (isSureThing && qty > 0) logs.push(`💎 ARB SIGHTED: ${market.ticker} is Deep ITM. Paying up to ${priceLimit}¢.`);
@@ -276,7 +389,7 @@ export async function runBotCycle(
                 logs.push(`⚠️ DRY TANK: Balance exhausted ($${(balanceCents / 100).toFixed(2)}). Waiting for settlements.`);
             }
 
-            logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.size} Size`);
+            logs.push(`Radar: Skp ${filteredCount.time} Time | ${filteredCount.spread} Sprd | ${filteredCount.logic} Log | ${filteredCount.edge} Edge | ${filteredCount.max_exposure} Sat | ${filteredCount.budget} Budg | ${filteredCount.size} Size`);
             logs.push(`Target: Found ${hitsStr || 'None'} | Trace: ${target}`);
         } else {
             logs.push(`Synthetix: Found ${opportunities.length} Aligned Patterns.`);
@@ -288,10 +401,14 @@ export async function runBotCycle(
         for (const opp of opportunities) {
             if (actionsTaken >= MAX_ACTIONS) break;
 
-            const success = await placeBotOrder(client, opp.market, opp.side, opp.qty, opp.cost, logs);
+            const currentPos = positions.get(opp.market.ticker) || 0;
+            const success = await placeBotOrder(client, opp.market, opp.side, opp.qty, opp.cost, logs, currentPos, config.maxShares);
             if (success) {
                 actionsTaken++;
                 balanceCents -= (opp.cost * opp.qty);
+                // Optimistically update position count for next iteration in same cycle?
+                // Not strictly necessary as we break or limit actions, but good practice.
+                positions.set(opp.market.ticker, currentPos + opp.qty);
             }
             await new Promise(r => setTimeout(r, 800)); // Rate limit buffer
         }

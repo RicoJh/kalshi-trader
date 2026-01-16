@@ -21,20 +21,73 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
     let btcTrend: 'up' | 'down' | 'flat' = 'flat';
     let ethTrend: 'up' | 'down' | 'flat' = 'flat';
 
-    // 1. Current Spot Prices
+    // 1. Current Spot Prices - Multi-Source Redundancy
+    const headers = { 'User-Agent': 'Mozilla/5.0' }; // Prevent 403s
+    let source = 'None';
+
+    // Decoupled fetching to prevent Promise.all failures from blocking
+
+    // Attempt 1: Binance (Primary)
     try {
-        const [btcRes, ethRes] = await Promise.all([
-            fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', { cache: 'no-store' }),
-            fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT', { cache: 'no-store' })
-        ]);
-        if (btcRes.ok) btcPrice = parseFloat((await btcRes.json()).price);
-        if (ethRes.ok) ethPrice = parseFloat((await ethRes.json()).price);
-    } catch (e) {
+        const btcRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', { cache: 'no-store', headers });
+        if (btcRes.ok) {
+            btcPrice = parseFloat((await btcRes.json()).price);
+            source = 'Binance';
+        }
+    } catch (e) { }
+
+    // Attempt 2: Mempool.space (Very Open / No Rate Limit)
+    if (btcPrice === 0) {
         try {
-            const res = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot', { cache: 'no-store' });
-            if (res.ok) btcPrice = parseFloat((await res.json()).data.amount);
-        } catch (e2) { }
+            const res = await fetch('https://mempool.space/api/v1/prices', { cache: 'no-store', headers });
+            if (res.ok) {
+                btcPrice = (await res.json()).USD;
+                source = 'Mempool';
+            }
+        } catch (e) { }
     }
+
+    // Attempt 3: Coinbase
+    if (btcPrice === 0) {
+        try {
+            const res = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot', { cache: 'no-store', headers });
+            if (res.ok) {
+                btcPrice = parseFloat((await res.json()).data.amount);
+                source = 'Coinbase';
+            }
+        } catch (e) { }
+    }
+
+    // Attempt 4: Blockchain.info
+    if (btcPrice === 0) {
+        try {
+            const res = await fetch('https://blockchain.info/ticker', { cache: 'no-store', headers });
+            if (res.ok) {
+                btcPrice = (await res.json()).USD.last;
+                source = 'Blockchain';
+            }
+        } catch (e) { }
+    }
+
+    // Attempt 5: Kraken
+    if (btcPrice === 0) {
+        try {
+            const res = await fetch('https://api.kraken.com/0/public/Ticker?pair=XBTUSD', { cache: 'no-store', headers });
+            if (res.ok) {
+                const data = await res.json();
+                btcPrice = parseFloat(data.result?.XXBTZUSD?.c?.[0] || "0");
+                source = 'Kraken';
+            }
+        } catch (e) {
+            console.error("All Crypto APIs Failed. Internet?", e);
+        }
+    }
+
+    // ETH Fetch (Independent)
+    try {
+        const ethRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT', { cache: 'no-store' });
+        if (ethRes.ok) ethPrice = parseFloat((await ethRes.json()).price);
+    } catch (e) { }
 
     // 2. Momentum & Sentiment (RSI/Trend)
     try {
@@ -80,8 +133,8 @@ export async function getCryptoPrices(): Promise<CoinGeckoPrice> {
     }
 
     return {
-        bitcoin: { usd: btcPrice || 91000 },
-        ethereum: { usd: ethPrice || 2400 },
+        bitcoin: { usd: btcPrice || 0 }, // REMOVED 91000 DEFAULT
+        ethereum: { usd: ethPrice || 0 },
         btc_rsi: btcRsi,
         eth_rsi: ethRsi,
         btc_trend: btcTrend,

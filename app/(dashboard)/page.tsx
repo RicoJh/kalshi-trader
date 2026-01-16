@@ -5,6 +5,7 @@ import { PriceTicker } from "@/components/features/price-ticker"
 import { RecentActivity } from "@/components/features/recent-activity"
 import { PerformanceChart } from "@/components/features/performance-chart"
 import { StatsCards } from "@/components/features/stats-cards"
+import { WhaleWatcher } from "@/components/features/whale-watcher"
 import { Activity, ShieldCheck, Zap } from "lucide-react"
 
 export default function DashboardPage() {
@@ -62,6 +63,11 @@ export default function DashboardPage() {
                         <PerformanceChart />
                     </CardContent>
                 </Card>
+
+                {/* Polymarket Intelligence */}
+                <div className="col-span-3 h-full">
+                    <WhaleWatcher />
+                </div>
 
                 {/* Real-time Order Stream */}
                 <Card className="col-span-3 glass-card border-red-500/10 overflow-hidden relative group">
